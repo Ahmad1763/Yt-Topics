@@ -40,7 +40,7 @@ days = st.slider("Search last X days", 1, 30, 5)
 
 video_type = st.radio(
     "Video Type",
-    ["Both", "Shorts (<60s)", "Long Videos (>60s)"]
+    ["Both", "Shorts", "Long Videos"]
 )
 
 # ---------------- HELPERS ----------------
@@ -63,7 +63,6 @@ def analyze_titles(titles):
         words.extend(re.findall(r'\b\w+\b', t.lower()))
     return Counter(words).most_common(8)
 
-# 🔹 Manual ISO8601 Duration Parser (no external libs)
 def get_video_seconds(duration):
     match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration)
     if not match:
@@ -73,7 +72,15 @@ def get_video_seconds(duration):
     seconds = int(match.group(3)) if match.group(3) else 0
     return hours * 3600 + minutes * 60 + seconds
 
-# ---------------- SEARCH BUTTON ----------------
+# 🔥 New Shorts Detection
+def is_short_video(title, duration_seconds):
+    if duration_seconds <= 180:
+        return True
+    if "#" in title:
+        return True
+    return False
+
+# ---------------- SEARCH ----------------
 if st.button("🔥 Find Viral Topics"):
 
     if not api_key or not niche:
@@ -96,18 +103,6 @@ if st.button("🔥 Find Viral Topics"):
         }).json()
 
         items = search_res.get("items", [])
-
-        if not items:
-            search_res = requests.get("https://www.googleapis.com/youtube/v3/search", params={
-                "part": "snippet",
-                "q": keyword,
-                "type": "video",
-                "order": "viewCount",
-                "maxResults": 5,
-                "key": api_key
-            }).json()
-            items = search_res.get("items", [])
-
         if not items:
             continue
 
@@ -139,11 +134,14 @@ if st.button("🔥 Find Viral Topics"):
             vs = video_map[vid]
             cs = channel_map[cid]
 
-            length_seconds = get_video_seconds(vs["contentDetails"]["duration"])
+            duration_seconds = get_video_seconds(vs["contentDetails"]["duration"])
+            title = vs["snippet"]["title"]
 
-            if video_type == "Shorts (<60s)" and length_seconds > 260:
+            short_flag = is_short_video(title, duration_seconds)
+
+            if video_type == "Shorts" and not short_flag:
                 continue
-            if video_type == "Long Videos (>60s)" and length_seconds <= 60:
+            if video_type == "Long Videos" and short_flag:
                 continue
 
             views = int(vs["statistics"].get("viewCount", 0))
@@ -154,13 +152,13 @@ if st.button("🔥 Find Viral Topics"):
             pub_date = datetime.strptime(vs["snippet"]["publishedAt"], "%Y-%m-%dT%H:%M:%SZ")
             days_live = max((datetime.utcnow() - pub_date).days, 1)
             views_day = views / days_live
-            viral_score = (views_day * 0.7) + (emotional_score(vs["snippet"]["title"]) * 10)
+            viral_score = (views_day * 0.7) + (emotional_score(title) * 10)
 
             results.append({
-                "Title": vs["snippet"]["title"],
+                "Title": title,
                 "Channel": cs["snippet"]["title"],
                 "ChannelId": cid,
-                "Duration (s)": length_seconds,
+                "Duration (s)": duration_seconds,
                 "Views/Day": round(views_day, 1),
                 "Viral Score": round(viral_score, 1),
                 "URL": f"https://youtube.com/watch?v={vid}"
@@ -205,7 +203,7 @@ if st.button("🔥 Find Viral Topics"):
 
                 st.write("### 📌 Channel Strategy Breakdown")
                 st.write("**Common Title Words:**", ", ".join(w for w,_ in patterns))
-                st.write("**Content Pattern:** Repeating format and strong hooks.")
-                st.write("**Gap You Can Exploit:** Better storytelling, thumbnails, or overlooked subtopics.")
+                st.write("**Content Pattern:** Repeatable hook structure.")
+                st.write("**Gap You Can Exploit:** Better storytelling, thumbnails, or uncovered subtopics.")
 
         st.write("---")
