@@ -9,7 +9,6 @@ from collections import Counter
 SETTINGS_FILE = "yt_settings.json"
 
 # ---------------- SETTINGS ----------------
-
 def load_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
@@ -24,7 +23,6 @@ def save_settings(settings):
 settings = load_settings()
 
 # ---------------- UI ----------------
-
 st.title("🚀 YouTube Viral Niche Finder PRO")
 
 st.sidebar.header("⚙ Settings")
@@ -39,10 +37,8 @@ if st.sidebar.button("💾 Save Settings"):
 
 niche = st.text_input("Enter a niche")
 days = st.slider("Search last X days", 1, 30, 5)
-channel_type = st.radio("Channel Type", ["Both", "AI Generated", "Human Made"])
 
 # ---------------- HELPERS ----------------
-
 def generate_keywords(niche):
     return list(set([
         f"{niche} transformation", f"{niche} before and after",
@@ -59,10 +55,9 @@ def analyze_titles(titles):
     words = []
     for t in titles:
         words.extend(re.findall(r'\b\w+\b', t.lower()))
-    return ", ".join(w for w,_ in Counter(words).most_common(8))
+    return Counter(words).most_common(8)
 
 # ---------------- SEARCH ----------------
-
 if st.button("🔥 Find Viral Topics"):
 
     if not api_key or not niche:
@@ -87,24 +82,19 @@ if st.button("🔥 Find Viral Topics"):
         video_ids = [i["id"]["videoId"] for i in items]
         channel_ids = list(set(i["snippet"]["channelId"] for i in items))
 
-        # Fetch video stats
         video_stats = requests.get("https://www.googleapis.com/youtube/v3/videos", params={
             "part": "statistics,snippet",
             "id": ",".join(video_ids),
             "key": api_key
         }).json().get("items", [])
 
-        # Map by videoId
-        video_map = {v["id"]: v for v in video_stats}
-
-        # Fetch channel stats
         channel_stats = requests.get("https://www.googleapis.com/youtube/v3/channels", params={
             "part": "statistics,snippet",
             "id": ",".join(channel_ids),
             "key": api_key
         }).json().get("items", [])
 
-        # Map by channelId
+        video_map = {v["id"]: v for v in video_stats}
         channel_map = {c["id"]: c for c in channel_stats}
 
         for item in items:
@@ -119,9 +109,8 @@ if st.button("🔥 Find Viral Topics"):
 
             views = int(vs["statistics"].get("viewCount", 0))
             subs = int(cs["statistics"].get("subscriberCount", 0))
-
             if subs > sub_limit:
-                continue  # FIXED subscriber filter
+                continue
 
             pub_date = datetime.strptime(vs["snippet"]["publishedAt"], "%Y-%m-%dT%H:%M:%SZ")
             days_live = max((datetime.utcnow() - pub_date).days, 1)
@@ -143,29 +132,40 @@ if st.button("🔥 Find Viral Topics"):
 
     df = pd.DataFrame(results).sort_values("Viral Score", ascending=False)
 
-    st.subheader("🏆 Top 3 Opportunities")
-    for i, row in df.head(3).iterrows():
+    # -------- SHOW FULL LIST FIRST --------
+    st.subheader("📊 All Viral Opportunities")
+    for i, r in df.iterrows():
+        st.markdown(f"**{r['Title']}**  \n🔗 [Watch Video]({r['URL']}) | Views/Day: {r['Views/Day']} | Viral Score: {r['Viral Score']}")
+        st.write("---")
+
+    # -------- TOP 3 PICKS --------
+    st.subheader("🏆 Top 3 Best Opportunities")
+    top3 = df.head(3)
+
+    for idx, row in top3.iterrows():
         st.markdown(f"### 🎯 {row['Title']}")
         st.markdown(f"🔗 [Watch Video]({row['URL']})")
         st.markdown(f"Channel: **{row['Channel']}** | Views/Day: **{row['Views/Day']}**")
 
-        if st.button(f"Analyze Channel {row['Channel']}", key=f"analyze_{row['ChannelId']}"):
+        btn_key = f"analyze_{row['ChannelId']}_{idx}"
+
+        if st.button(f"Analyze Channel Strategy", key=btn_key):
             with st.spinner("Analyzing channel..."):
                 ch_videos = requests.get("https://www.googleapis.com/youtube/v3/search", params={
                     "part": "snippet",
                     "channelId": row["ChannelId"],
-                    "maxResults": 10,
-                    "order": "date",
+                    "maxResults": 15,
+                    "order": "viewCount",
                     "type": "video",
                     "key": api_key
                 }).json().get("items", [])
 
                 titles = [v["snippet"]["title"] for v in ch_videos]
-                st.write("**Recent Title Patterns:**", analyze_titles(titles))
-                st.write("**Upload Style Insight:** Likely follows repeatable formatting and strong curiosity hooks.")
+                patterns = analyze_titles(titles)
+
+                st.write("### 📌 Channel Strategy Breakdown")
+                st.write("**Common Title Words:**", ", ".join(w for w,_ in patterns))
+                st.write("**Content Pattern:** Repeating format, emotional hooks, transformation or curiosity-driven structure.")
+                st.write("**Gap You Can Exploit:** Improve storytelling, stronger thumbnails, faster pacing, or niche subtopics they haven't covered.")
 
         st.write("---")
-
-    st.subheader("📊 All Results")
-    for _, r in df.iterrows():
-        st.markdown(f"**{r['Title']}**  \n🔗 [Watch]({r['URL']}) | Viral Score: {r['Viral Score']}")
