@@ -3,6 +3,7 @@ import requests
 import json
 import re
 import pandas as pd
+import isodate
 from datetime import datetime, timedelta
 from collections import Counter
 
@@ -38,6 +39,11 @@ if st.sidebar.button("💾 Save Settings"):
 niche = st.text_input("Enter a niche")
 days = st.slider("Search last X days", 1, 30, 5)
 
+video_type = st.radio(
+    "Video Type",
+    ["Both", "Shorts (<60s)", "Long Videos (>60s)"]
+)
+
 # ---------------- HELPERS ----------------
 def generate_keywords(niche):
     base = [
@@ -58,6 +64,12 @@ def analyze_titles(titles):
         words.extend(re.findall(r'\b\w+\b', t.lower()))
     return Counter(words).most_common(8)
 
+def get_video_seconds(duration_iso):
+    try:
+        return int(isodate.parse_duration(duration_iso).total_seconds())
+    except:
+        return 0
+
 # ---------------- SEARCH BUTTON ----------------
 if st.button("🔥 Find Viral Topics"):
 
@@ -70,7 +82,6 @@ if st.button("🔥 Find Viral Topics"):
     results = []
 
     for keyword in keywords:
-        # PRIMARY SEARCH
         search_res = requests.get("https://www.googleapis.com/youtube/v3/search", params={
             "part": "snippet",
             "q": keyword,
@@ -83,7 +94,6 @@ if st.button("🔥 Find Viral Topics"):
 
         items = search_res.get("items", [])
 
-        # FALLBACK SEARCH
         if not items:
             search_res = requests.get("https://www.googleapis.com/youtube/v3/search", params={
                 "part": "snippet",
@@ -102,7 +112,7 @@ if st.button("🔥 Find Viral Topics"):
         channel_ids = list(set(i["snippet"]["channelId"] for i in items))
 
         video_stats = requests.get("https://www.googleapis.com/youtube/v3/videos", params={
-            "part": "statistics,snippet",
+            "part": "statistics,snippet,contentDetails",
             "id": ",".join(video_ids),
             "key": api_key
         }).json().get("items", [])
@@ -126,6 +136,14 @@ if st.button("🔥 Find Viral Topics"):
             vs = video_map[vid]
             cs = channel_map[cid]
 
+            duration_iso = vs["contentDetails"]["duration"]
+            length_seconds = get_video_seconds(duration_iso)
+
+            if video_type == "Shorts (<60s)" and length_seconds > 60:
+                continue
+            if video_type == "Long Videos (>60s)" and length_seconds <= 60:
+                continue
+
             views = int(vs["statistics"].get("viewCount", 0))
             subs = int(cs["statistics"].get("subscriberCount", 0))
             if subs > sub_limit:
@@ -140,8 +158,9 @@ if st.button("🔥 Find Viral Topics"):
                 "Title": vs["snippet"]["title"],
                 "Channel": cs["snippet"]["title"],
                 "ChannelId": cid,
-                "Views/Day": round(views_day,1),
-                "Viral Score": round(viral_score,1),
+                "Duration (s)": length_seconds,
+                "Views/Day": round(views_day, 1),
+                "Viral Score": round(viral_score, 1),
                 "URL": f"https://youtube.com/watch?v={vid}"
             })
 
@@ -153,7 +172,9 @@ if st.button("🔥 Find Viral Topics"):
 
     st.subheader("📊 All Viral Opportunities")
     for _, r in df.iterrows():
-        st.markdown(f"**{r['Title']}**  \n🔗 [Watch Video]({r['URL']}) | Views/Day: {r['Views/Day']} | Viral Score: {r['Viral Score']}")
+        st.markdown(
+            f"**{r['Title']}**  \n🔗 [Watch Video]({r['URL']}) | ⏱ {r['Duration (s)']}s | Views/Day: {r['Views/Day']} | Viral Score: {r['Viral Score']}"
+        )
         st.write("---")
 
     st.subheader("🏆 Top 3 Best Opportunities")
@@ -183,6 +204,6 @@ if st.button("🔥 Find Viral Topics"):
                 st.write("### 📌 Channel Strategy Breakdown")
                 st.write("**Common Title Words:**", ", ".join(w for w,_ in patterns))
                 st.write("**Content Pattern:** Repeating format and strong hooks.")
-                st.write("**Gap You Can Exploit:** Improve storytelling, stronger thumbnails, or niche subtopics they missed.")
+                st.write("**Gap You Can Exploit:** Better storytelling, thumbnails, or overlooked subtopics.")
 
         st.write("---")
