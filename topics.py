@@ -141,7 +141,7 @@ if st.button("🔥 Find Viral Topics"):
 
             length_seconds = get_video_seconds(vs["contentDetails"]["duration"])
 
-            if video_type == "Shorts (<60s)" and length_seconds > 60:
+            if video_type == "Shorts (<60s)" and length_seconds > 260:
                 continue
             if video_type == "Long Videos (>60s)" and length_seconds <= 60:
                 continue
