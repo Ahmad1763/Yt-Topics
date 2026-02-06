@@ -3,7 +3,6 @@ import requests
 import json
 import re
 import pandas as pd
-import isodate
 from datetime import datetime, timedelta
 from collections import Counter
 
@@ -64,11 +63,15 @@ def analyze_titles(titles):
         words.extend(re.findall(r'\b\w+\b', t.lower()))
     return Counter(words).most_common(8)
 
-def get_video_seconds(duration_iso):
-    try:
-        return int(isodate.parse_duration(duration_iso).total_seconds())
-    except:
+# 🔹 Manual ISO8601 Duration Parser (no external libs)
+def get_video_seconds(duration):
+    match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration)
+    if not match:
         return 0
+    hours = int(match.group(1)) if match.group(1) else 0
+    minutes = int(match.group(2)) if match.group(2) else 0
+    seconds = int(match.group(3)) if match.group(3) else 0
+    return hours * 3600 + minutes * 60 + seconds
 
 # ---------------- SEARCH BUTTON ----------------
 if st.button("🔥 Find Viral Topics"):
@@ -136,8 +139,7 @@ if st.button("🔥 Find Viral Topics"):
             vs = video_map[vid]
             cs = channel_map[cid]
 
-            duration_iso = vs["contentDetails"]["duration"]
-            length_seconds = get_video_seconds(duration_iso)
+            length_seconds = get_video_seconds(vs["contentDetails"]["duration"])
 
             if video_type == "Shorts (<60s)" and length_seconds > 60:
                 continue
