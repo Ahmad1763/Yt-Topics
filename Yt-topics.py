@@ -4,6 +4,7 @@ import json
 import re
 import pandas as pd
 from datetime import datetime, timedelta
+from collections import Counter
 
 SETTINGS_FILE = "yt_settings.json"
 
@@ -24,7 +25,7 @@ settings = load_settings()
 
 # ---------------- UI ----------------
 
-st.title("🚀 YouTube Viral Niche Finder")
+st.title("🚀 YouTube Viral Niche Finder PRO")
 
 st.sidebar.header("⚙ Settings")
 
@@ -39,60 +40,47 @@ if st.sidebar.button("💾 Save Settings"):
 
 st.header("🔎 Niche Trend Search")
 
-niche = st.text_input("Enter a niche (example: car restoration, tech repair, reddit stories)")
+niche = st.text_input("Enter a niche")
 days = st.slider("Search videos from last X days", 1, 30, 5)
 
-channel_type = st.radio(
-    "Channel Type",
-    ["Both", "AI Generated", "Human Made"]
-)
+channel_type = st.radio("Channel Type", ["Both", "AI Generated", "Human Made"])
 
-# ---------------- KEYWORD GENERATOR ----------------
+# ---------------- HELPERS ----------------
 
 def generate_keywords(niche):
     patterns = [
-        f"{niche} transformation",
-        f"{niche} before and after",
-        f"{niche} timelapse",
-        f"{niche} full process",
-        f"{niche} satisfying",
-        f"{niche} restoration",
-        f"{niche} repair",
-        f"{niche} rebuild",
-        f"{niche} makeover",
-        f"extreme {niche}",
-        f"{niche} project",
-        f"how to {niche}",
-        f"{niche} ASMR",
-        f"{niche} cinematic",
-        f"{niche} documentary",
+        f"{niche} transformation", f"{niche} before and after", f"{niche} timelapse",
+        f"{niche} full process", f"{niche} satisfying", f"{niche} restoration",
+        f"{niche} repair", f"{niche} rebuild", f"{niche} makeover",
+        f"extreme {niche}", f"{niche} project", f"how to {niche}",
+        f"{niche} ASMR", f"{niche} cinematic", f"{niche} documentary"
     ]
     return list(set(patterns))
 
-# ---------------- TITLE ANALYZER ----------------
-
-EMOTIONAL_WORDS = ["shocking", "insane", "unbelievable", "satisfying", "emotional", "caught", "exposed", "transformation"]
+EMOTIONAL_WORDS = ["shocking","insane","unbelievable","satisfying","emotional","caught","exposed","transformation"]
 
 def emotional_score(title):
-    return sum(1 for word in EMOTIONAL_WORDS if re.search(word, title, re.IGNORECASE))
+    return sum(1 for w in EMOTIONAL_WORDS if re.search(w, title, re.IGNORECASE))
 
-# ---------------- CHANNEL TYPE DETECTION ----------------
-
-AI_KEYWORDS = ["ai generated", "ai voice", "text to speech", "chatgpt", "midjourney", "stable diffusion", "faceless"]
-HUMAN_KEYWORDS = ["vlog", "i built", "i restored", "watch me", "my project", "workshop", "hands on"]
+AI_KEYWORDS = ["ai generated","ai voice","text to speech","chatgpt","midjourney","stable diffusion","faceless"]
+HUMAN_KEYWORDS = ["vlog","i built","i restored","watch me","my project","workshop","hands on"]
 
 def detect_channel_type(title, description):
     text = f"{title} {description}".lower()
-    ai_score = sum(word in text for word in AI_KEYWORDS)
-    human_score = sum(word in text for word in HUMAN_KEYWORDS)
-
-    if ai_score > human_score:
+    if sum(w in text for w in AI_KEYWORDS) > sum(w in text for w in HUMAN_KEYWORDS):
         return "AI"
-    elif human_score > ai_score:
+    elif sum(w in text for w in HUMAN_KEYWORDS) > sum(w in text for w in AI_KEYWORDS):
         return "Human"
     return "Unknown"
 
-# ---------------- FETCH DATA ----------------
+def analyze_titles(titles):
+    words = []
+    for t in titles:
+        words.extend(re.findall(r'\b\w+\b', t.lower()))
+    common = Counter(words).most_common(10)
+    return ", ".join(w for w,_ in common)
+
+# ---------------- SEARCH ----------------
 
 if st.button("🔥 Find Viral Topics"):
 
@@ -103,24 +91,15 @@ if st.button("🔥 Find Viral Topics"):
     keywords = generate_keywords(niche)
     start_date = (datetime.utcnow() - timedelta(days=int(days))).isoformat("T") + "Z"
 
-    YT_SEARCH = "https://www.googleapis.com/youtube/v3/search"
-    YT_VIDEOS = "https://www.googleapis.com/youtube/v3/videos"
-    YT_CHANNELS = "https://www.googleapis.com/youtube/v3/channels"
-
     results = []
 
     for keyword in keywords:
-        params = {
-            "part": "snippet",
-            "q": keyword,
-            "type": "video",
-            "order": "viewCount",
-            "publishedAfter": start_date,
-            "maxResults": 5,
-            "key": api_key
-        }
+        search_res = requests.get("https://www.googleapis.com/youtube/v3/search", params={
+            "part": "snippet", "q": keyword, "type": "video",
+            "order": "viewCount", "publishedAfter": start_date,
+            "maxResults": 5, "key": api_key
+        }).json()
 
-        search_res = requests.get(YT_SEARCH, params=params).json()
         items = search_res.get("items", [])
         if not items:
             continue
@@ -128,16 +107,12 @@ if st.button("🔥 Find Viral Topics"):
         video_ids = [i["id"]["videoId"] for i in items]
         channel_ids = [i["snippet"]["channelId"] for i in items]
 
-        video_stats = requests.get(YT_VIDEOS, params={
-            "part": "statistics,snippet",
-            "id": ",".join(video_ids),
-            "key": api_key
+        video_stats = requests.get("https://www.googleapis.com/youtube/v3/videos", params={
+            "part": "statistics,snippet", "id": ",".join(video_ids), "key": api_key
         }).json().get("items", [])
 
-        channel_stats = requests.get(YT_CHANNELS, params={
-            "part": "statistics",
-            "id": ",".join(channel_ids),
-            "key": api_key
+        channel_stats = requests.get("https://www.googleapis.com/youtube/v3/channels", params={
+            "part": "statistics,snippet", "id": ",".join(channel_ids), "key": api_key
         }).json().get("items", [])
 
         for v, vs, cs in zip(items, video_stats, channel_stats):
@@ -148,11 +123,11 @@ if st.button("🔥 Find Viral Topics"):
 
             views_day = views / days_live
             ratio = views / max(subs, 1)
-            emo_score = emotional_score(vs["snippet"]["title"])
-            description = vs["snippet"].get("description", "")
-            ctype = detect_channel_type(vs["snippet"]["title"], description)
+            emo = emotional_score(vs["snippet"]["title"])
+            desc = vs["snippet"].get("description","")
+            ctype = detect_channel_type(vs["snippet"]["title"], desc)
 
-            viral_score = (views_day * 0.6) + (ratio * 0.3) + (emo_score * 10)
+            viral_score = (views_day * 0.6) + (ratio * 0.3) + (emo * 10)
 
             if subs <= sub_limit:
                 if channel_type == "AI Generated" and ctype != "AI":
@@ -162,25 +137,48 @@ if st.button("🔥 Find Viral Topics"):
 
                 results.append({
                     "Title": vs["snippet"]["title"],
+                    "Channel": cs["snippet"]["title"],
+                    "ChannelId": cs["id"],
                     "Keyword": keyword,
                     "Channel Type": ctype,
                     "Views": views,
-                    "Views/Day": round(views_day, 1),
+                    "Views/Day": round(views_day,1),
                     "Subs": subs,
-                    "V/S Ratio": round(ratio, 2),
-                    "Emotional Score": emo_score,
-                    "Viral Score": round(viral_score, 1),
+                    "V/S Ratio": round(ratio,2),
+                    "Viral Score": round(viral_score,1),
                     "URL": f"https://youtube.com/watch?v={v['id']['videoId']}"
                 })
 
     if not results:
-        st.warning("No results found. Try broader niche.")
+        st.warning("No results found.")
         st.stop()
 
     df = pd.DataFrame(results).sort_values("Viral Score", ascending=False)
 
-    st.success("Top Viral Opportunities Found!")
-    st.dataframe(df)
+    st.subheader("🏆 Top 3 Viral Opportunities")
+    top3 = df.head(3)
+
+    for idx, row in top3.iterrows():
+        st.markdown(f"### 🎯 {row['Title']}")
+        st.markdown(f"🔗 [Watch Video]({row['URL']})")
+        st.markdown(f"Channel: **{row['Channel']}** | Views/Day: **{row['Views/Day']}** | Viral Score: **{row['Viral Score']}**")
+
+        if st.button(f"Analyze Channel: {row['Channel']}", key=row['ChannelId']):
+            channel_videos = requests.get("https://www.googleapis.com/youtube/v3/search", params={
+                "part": "snippet", "channelId": row["ChannelId"],
+                "maxResults": 10, "order": "viewCount", "key": api_key
+            }).json().get("items", [])
+
+            titles = [v["snippet"]["title"] for v in channel_videos]
+            st.write("**Common Title Words:**", analyze_titles(titles))
+            st.write("**Total Videos Analyzed:**", len(titles))
+            st.write("**Likely Content Pattern:** Repeating structure, emotional hooks, transformation or curiosity-driven titles.")
+
+        st.write("---")
+
+    st.subheader("📊 All Results")
+    for _, r in df.iterrows():
+        st.markdown(f"**{r['Title']}**  \n🔗 [Watch]({r['URL']}) | Views/Day: {r['Views/Day']} | Viral Score: {r['Viral Score']}")
 
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button("⬇ Download CSV", csv, "viral_topics.csv", "text/csv")
